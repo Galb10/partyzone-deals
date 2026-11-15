@@ -75,9 +75,8 @@ function isPartyRelevant(title) {
   return strongTerms.some((term) => value.includes(term));
 }
 
-function formatShekelPrice(value, currency) {
-  if (!value || String(currency || "").toUpperCase() !== "ILS") return "";
-  const amount = Number(String(value).replace(/[^0-9.]/g, ""));
+function formatShekelPrice(value) {
+  const amount = Number(String(value ?? "").replace(/[^0-9.]/g, ""));
   if (!Number.isFinite(amount) || amount <= 0) return "";
   return new Intl.NumberFormat("he-IL", {
     style: "currency",
@@ -86,9 +85,37 @@ function formatShekelPrice(value, currency) {
   }).format(amount);
 }
 
+async function convertProductPricesToILS(products) {
+  const needsUsdRate = products.some((p) => String(p.currency || "").toUpperCase() === "USD");
+  let usdToIls = null;
+  if (needsUsdRate) {
+    try {
+      const response = await fetch("https://open.er-api.com/v6/latest/USD", {
+        signal: AbortSignal.timeout(7000),
+      });
+      const data = await response.json();
+      const rate = Number(data?.rates?.ILS);
+      if (response.ok && data?.result === "success" && Number.isFinite(rate) && rate > 0) {
+        usdToIls = rate;
+      }
+    } catch (error) {
+      console.warn("Could not retrieve USD/ILS exchange rate:", error?.message ?? "unknown error");
+    }
+  }
+
+  return products.map((product) => {
+    const currency = String(product.currency || "").toUpperCase();
+    const amount = Number(String(product.price ?? "").replace(/[^0-9.]/g, ""));
+    if (!Number.isFinite(amount) || amount <= 0) return { ...product, priceILS: null };
+    if (currency === "ILS") return { ...product, priceILS: amount };
+    if (currency === "USD" && usdToIls) return { ...product, priceILS: amount * usdToIls };
+    return { ...product, priceILS: null };
+  });
+}
+
 function productCaption(product) {
   const lines = [product.title, product.description];
-  const price = formatShekelPrice(product.price, product.currency);
+  const price = formatShekelPrice(product.priceILS);
   if (price) lines.push(`💰 מחיר: ${price}`);
   return lines.join("\n\n").slice(0, 1000);
 }
@@ -155,49 +182,53 @@ function extractResponseText(response) {
 
 async function writeSmartProductDescription(product, details = {}) {
   const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) return "פרטי תיאור נוספים אינם זמינים; שם המוצר מופיע למעלה.";
+  if (!apiKey) throw new Error("OPENAI_API_KEY is not configured; refusing to publish without an AI description");
 
   const context = {
     product_title: product.title,
     category: [details.first_level_category_name, details.second_level_category_name].filter(Boolean).join(" > "),
-    popularity_signal: details.lastest_volume || "",
-    rating: details.evaluate_rate || "",
-    product_video_available: Boolean(details.product_video_url),
+    popularity_signal: product.popularity || details.lastest_volume || "",
+    rating: product.rating || details.evaluate_rate || "",
   };
 
-  try {
-    const response = await fetch("https://api.openai.com/v1/responses", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: process.env.OPENAI_MODEL || "gpt-6-astra",
-        instructions:
-          "כתוב בעברית תיאור קצר ומדויק למוצר עבור PartyZone Deals (משפט אחד או שניים, עד 180 תווים). " +
-          "השתמש רק בפרטים שמופיעים במפורש בשם המוצר ובקטגוריה שסופקה. " +
-          "אסור להסיק שימוש, תכונה, חומר, מידה, עוצמה, תכולה או התאמה לאירוע אם הם לא מצוינים במפורש. " +
-          "אל תכתוב משפטי אווירה כלליים כמו 'ישדרג את המסיבה'. תאר בפשטות מה המוצר לפי שמו. " +
-          "אם השם לא מספק מידע ברור, החזר תיאור עובדתי מינימלי שמבוסס על המילים בשם המוצר בלבד. " +
-          "החזר רק את התיאור, בלי כותרת, מחיר, אימוג׳י או מרכאות.",
-        input: JSON.stringify({
-          product_title: context.product_title,
-          category: context.category,
+  const instructions =
+    "אתה קופירייטר מסחרי דובר עברית שמתמחה במוצרי מסיבות. כתוב תיאור שיווקי קצר, טבעי ומדויק בעברית בלבד, 1–2 משפטים ועד 220 תווים. " +
+    "הסבר מה המוצר, איך משתמשים בו בפועל ובאיזה חלק של המסיבה הוא משתלב, על סמך שם המוצר והקטגוריה. " +
+    "תרגם מונחים באנגלית לעברית ואל תשאיר תיאור באנגלית. מותר להסביר שימוש מקובל וברור שנובע ישירות מסוג המוצר. " +
+    "אסור להמציא חומר, מידות, עוצמה, כמות, עמידות, תכולת אריזה, תכונות טכניות או הבטחות שלא מופיעות במידע. " +
+    "אל תכתוב מידע על דירוג או מכירות. אל תכתוב משפטים ריקים כמו 'פרטי תיאור אינם זמינים' או 'ישדרג את המסיבה'. " +
+    "אם השם עמום, תאר בזהירות מה ניתן לזהות ממנו והסבר שימוש כללי בלי להוסיף מפרט. החזר רק את התיאור בעברית.";
+
+  let lastError;
+  for (const model of [process.env.OPENAI_MODEL || "gpt-6-luna", "gpt-6.1-terra"]) {
+    try {
+      const response = await fetch("https://api.openai.com/v1/responses", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          instructions,
+          input: JSON.stringify(context),
+          max_output_tokens: 160,
         }),
-        max_output_tokens: 110,
-      }),
-      signal: AbortSignal.timeout(12000),
-    });
-    if (!response.ok) throw new Error(`OpenAI description request failed: ${response.status}`);
-    const data = await response.json();
-    const description = extractResponseText(data).replace(/^["'״]+|["'״]+$/g, "").trim();
-    if (!description || description.length > 320) throw new Error("AI description was empty or too long");
-    return description;
-  } catch (error) {
-    console.warn("AI product description unavailable; using safe fallback:", error?.message ?? "unknown error");
-    return "פרטי תיאור נוספים אינם זמינים; שם המוצר מופיע למעלה.";
+        signal: AbortSignal.timeout(18000),
+      });
+      if (!response.ok) throw new Error(`OpenAI description request failed: ${response.status}`);
+      const data = await response.json();
+      const description = extractResponseText(data).replace(/^[\"'״]+|[\"'״]+$/g, "").trim();
+      if (!description || description.length > 320 || !/[\u0590-\u05FF]/.test(description)) {
+        throw new Error("AI did not return a valid Hebrew description");
+      }
+      return description;
+    } catch (error) {
+      lastError = error;
+      console.warn(`AI description attempt failed (${model}):`, error?.message ?? "unknown error");
+    }
   }
+  throw new Error(`Could not generate a Hebrew AI description: ${lastError?.message ?? "unknown error"}`);
 }
 
 async function enrichProductDescriptions(products) {
@@ -207,7 +238,8 @@ async function enrichProductDescriptions(products) {
   } catch (error) {
     console.warn("AliExpress detail enrichment unavailable:", error?.message ?? "unknown error");
   }
-  return Promise.all(products.map(async (product) => ({
+  const pricedProducts = await convertProductPricesToILS(products);
+  return Promise.all(pricedProducts.map(async (product) => ({
     ...product,
     description: await writeSmartProductDescription(product, detailMap.get(String(product.id)) ?? {}),
   })));
@@ -272,6 +304,7 @@ async function queryAliExpressProducts(keyword, { pageNo = 1, pageSize = 50 } = 
     target_currency: "ILS",
     target_language: "EN",
     ship_to_country: "IL",
+    sort: "LAST_VOLUME_DESC",
     tracking_id: trackingId,
     fields: [
       "product_id",
@@ -282,6 +315,10 @@ async function queryAliExpressProducts(keyword, { pageNo = 1, pageSize = 50 } = 
       "sale_price",
       "sale_price_currency",
       "commission_rate",
+      "lastest_volume",
+      "evaluate_rate",
+      "target_sale_price",
+      "target_sale_price_currency",
     ].join(","),
   };
 
@@ -329,14 +366,16 @@ async function queryAliExpressProducts(keyword, { pageNo = 1, pageSize = 50 } = 
     .map((product) => ({
       id: String(product.product_id ?? product.productId ?? ""),
       title: product.product_title ?? product.productTitle ?? "AliExpress product",
-      price: product.sale_price ?? product.salePrice ?? "",
-      currency: product.sale_price_currency ?? product.salePriceCurrency ?? "ILS",
+      price: product.target_sale_price ?? product.targetSalePrice ?? product.sale_price ?? product.salePrice ?? "",
+      currency: product.target_sale_price_currency ?? product.targetSalePriceCurrency ?? product.sale_price_currency ?? product.salePriceCurrency ?? "",
       image: product.product_main_image_url ?? product.productMainImageUrl ?? "",
       link: product.promotion_link ?? product.promotionLink ?? product.product_detail_url ?? product.productDetailUrl ?? "",
       commission: product.commission_rate ?? product.commissionRate ?? "",
+      popularity: Number(product.lastest_volume ?? product.lastestVolume ?? 0) || 0,
+      rating: product.evaluate_rate ?? product.evaluateRate ?? "",
     }))
     .filter((product) => isPartyRelevant(product.title))
-    .map((product) => ({ ...product, description: productDescription(product.title) }));
+    .sort((a, b) => b.popularity - a.popularity);
 }
 
 function formatNoProducts(keyword) {
