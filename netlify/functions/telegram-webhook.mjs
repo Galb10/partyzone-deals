@@ -44,7 +44,6 @@ function safeHttpUrl(value) {
 function productCaption(product, index) {
   const lines = [`🎉 מוצר ${index + 1}`, product.title];
   if (product.price) lines.push(`💰 מחיר: ${product.price} ${product.currency}`);
-  if (product.commission) lines.push(`💸 עמלה: ${product.commission}`);
   return lines.join("\n").slice(0, 1000);
 }
 
