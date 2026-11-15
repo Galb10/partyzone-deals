@@ -37,7 +37,7 @@ export default async () => {
     throw new Error("Telegram publishing environment variables are missing");
   }
 
-  const store = getStore("partyzone-auto-publisher");
+  const store = getStore("affiliate-auto-publisher");
   const state = (await store.get(STATE_KEY, { type: "json", consistency: "strong" })) ?? {
     lastRunAt: null,
     lastAttemptAt: null,
