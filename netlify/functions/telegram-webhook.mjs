@@ -142,7 +142,6 @@ async function queryAliExpressProducts(keyword, { pageNo = 1, pageSize = 50 } = 
     tracking_id: trackingId,
     fields: [
       "product_id",
-      "product_id",
       "product_title",
       "product_main_image_url",
       "product_detail_url",
