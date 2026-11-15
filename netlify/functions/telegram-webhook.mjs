@@ -41,10 +41,44 @@ function safeHttpUrl(value) {
   }
 }
 
-function productCaption(product, index) {
-  const lines = [`🎉 מוצר ${index + 1}`, product.title];
+function productDescription(title) {
+  const value = title.toLowerCase();
+
+  if (/disco|dj|rave|night ?club|strobe|laser|stage light|party light|led light|glow|neon|projector/.test(value)) {
+    return "תאורה ואפקטים צבעוניים שיוסיפו אווירה לרחבת הריקודים.";
+  }
+  if (/balloon|confetti|streamer|banner|backdrop|foil fringe|garland|tassel|pom.?pom|pinata|piñata/.test(value)) {
+    return "קישוט חגיגי שיוסיף צבע וישדרג את עיצוב המסיבה.";
+  }
+  if (/photo ?booth|party hat|party glasses|glow stick|bracelet|wristband|costume|mask|party favor/.test(value)) {
+    return "אביזר כיפי שישדרג את האווירה ויוסיף עניין לאורחים.";
+  }
+  if (/bubble machine|smoke machine|fog machine|confetti cannon/.test(value)) {
+    return "אפקט מיוחד שיכול להפוך את המסיבה לחווייתית ומרשימה יותר.";
+  }
+  return "אביזר למסיבה שיכול להוסיף טאץ׳ חגיגי לאירוע.";
+}
+
+function isPartyRelevant(title) {
+  const value = title.toLowerCase().replace(/[^a-z0-9\s-]/g, " ");
+  const strongTerms = [
+    "party", "disco", "dj", "rave", "nightclub", "night club", "club",
+    "birthday", "balloon", "confetti", "streamer", "party decoration",
+    "party decor", "party supplies", "party favor", "wedding decor",
+    "event decor", "photo booth", "photobooth", "glow stick", "glowstick",
+    "glow", "neon", "strobe", "laser", "stage light", "party light",
+    "cake topper", "pinata", "piñata", "party hat", "party glasses",
+    "masquerade", "foil fringe", "bubble machine", "smoke machine",
+    "fog machine", "confetti cannon", "led curtain", "led disco",
+    "fairy light", "string light"
+  ];
+  return strongTerms.some((term) => value.includes(term));
+}
+
+function productCaption(product) {
+  const lines = [product.title, product.description];
   if (product.price) lines.push(`💰 מחיר: ${product.price} ${product.currency}`);
-  return lines.join("\n").slice(0, 1000);
+  return lines.join("\n\n").slice(0, 1000);
 }
 
 async function sendTelegramProductResults(token, chatId, products, keyword) {
@@ -53,7 +87,7 @@ async function sendTelegramProductResults(token, chatId, products, keyword) {
     const link = safeHttpUrl(product.link);
     const image = safeHttpUrl(product.image);
     const keyboard = link ? { inline_keyboard: [[{ text: "🛍️ לצפייה במוצר", url: link }]] } : undefined;
-    const caption = productCaption(product, index);
+    const caption = productCaption(product);
     if (image) {
       try {
         await sendTelegramPhoto(token, chatId, image, caption, keyboard);
@@ -101,7 +135,7 @@ async function queryAliExpressProducts(keyword) {
     format: "json",
     keywords: keyword,
     page_no: "1",
-    page_size: "5",
+    page_size: "20",
     target_currency: "USD",
     target_language: "EN",
     ship_to_country: "IL",
@@ -158,14 +192,18 @@ async function queryAliExpressProducts(keyword) {
       ? (Array.isArray(productsContainer.product) ? productsContainer.product : [productsContainer.product])
       : [];
 
-  return products.slice(0, 5).map((product) => ({
-    title: product.product_title ?? product.productTitle ?? "AliExpress product",
-    price: product.sale_price ?? product.salePrice ?? "",
-    currency: product.sale_price_currency ?? product.salePriceCurrency ?? "USD",
-    image: product.product_main_image_url ?? product.productMainImageUrl ?? "",
-    link: product.promotion_link ?? product.promotionLink ?? product.product_detail_url ?? product.productDetailUrl ?? "",
-    commission: product.commission_rate ?? product.commissionRate ?? "",
-  }));
+  return products
+    .map((product) => ({
+      title: product.product_title ?? product.productTitle ?? "AliExpress product",
+      price: product.sale_price ?? product.salePrice ?? "",
+      currency: product.sale_price_currency ?? product.salePriceCurrency ?? "USD",
+      image: product.product_main_image_url ?? product.productMainImageUrl ?? "",
+      link: product.promotion_link ?? product.promotionLink ?? product.product_detail_url ?? product.productDetailUrl ?? "",
+      commission: product.commission_rate ?? product.commissionRate ?? "",
+    }))
+    .filter((product) => isPartyRelevant(product.title))
+    .slice(0, 5)
+    .map((product) => ({ ...product, description: productDescription(product.title) }));
 }
 
 function formatNoProducts(keyword) {
