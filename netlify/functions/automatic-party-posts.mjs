@@ -28,7 +28,7 @@ function shuffle(items) {
 function productKey(product) {
   const id = String(product.id ?? "").trim();
   if (id) return `id:${id}`;
-  const title = String(product.title ?? "").toLowerCase().replace(/[^\\p{L}\\p{N}]+/gu, " ").trim();
+  const title = String(product.title ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
   return `title:${title}`;
 }
 
