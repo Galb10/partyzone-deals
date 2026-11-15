@@ -81,9 +81,127 @@ function productCaption(product) {
   return lines.join("\n\n").slice(0, 1000);
 }
 
+async function queryAliExpressProductDetails(products) {
+  const appKey = process.env.ALIEXPRESS_APP_KEY;
+  const appSecret = process.env.ALIEXPRESS_APP_SECRET;
+  const trackingId = process.env.ALIEXPRESS_TRACKING_ID;
+  const ids = products.map((product) => product.id).filter(Boolean);
+  if (!appKey || !appSecret || !trackingId || !ids.length) return new Map();
+
+  const params = {
+    app_key: appKey,
+    method: "aliexpress.affiliate.productdetail.get",
+    sign_method: "md5",
+    timestamp: aliExpressTimestamp(),
+    v: "2.0",
+    format: "json",
+    product_ids: ids.join(","),
+    target_currency: "USD",
+    target_language: "EN",
+    tracking_id: trackingId,
+    country: "IL",
+    fields: [
+      "product_id", "product_title", "first_level_category_name",
+      "second_level_category_name", "evaluate_rate", "lastest_volume",
+      "product_video_url", "shop_url", "product_detail_url",
+    ].join(","),
+  };
+  params.sign = aliExpressSignature(params, appSecret);
+
+  const response = await fetch(ALIEXPRESS_API, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded;charset=utf-8" },
+    body: new URLSearchParams(params),
+    signal: AbortSignal.timeout(10000),
+  });
+  if (!response.ok) throw new Error("AliExpress product detail request failed");
+  const data = await response.json().catch(() => null);
+  const apiResponse = data?.aliexpress_affiliate_productdetail_get_response ?? data?.aliexpressAffiliateProductdetailGetResponse ?? data;
+  if (!data || apiResponse?.error_response || apiResponse?.error) throw new Error("AliExpress product details unavailable");
+
+  const result = apiResponse?.resp_result ?? apiResponse?.respResult ?? apiResponse;
+  const container = result?.result?.products ?? result?.products;
+  const items = Array.isArray(container)
+    ? container
+    : container?.product
+      ? (Array.isArray(container.product) ? container.product : [container.product])
+      : [];
+  return new Map(items.map((item) => [String(item.product_id ?? item.productId ?? ""), item]));
+}
+
+function extractResponseText(response) {
+  if (typeof response?.output_text === "string") return response.output_text.trim();
+  const parts = [];
+  for (const item of response?.output ?? []) {
+    if (item.type !== "message") continue;
+    for (const part of item.content ?? []) {
+      if (part.type === "output_text" && typeof part.text === "string") parts.push(part.text);
+    }
+  }
+  return parts.join("\n").trim();
+}
+
+async function writeSmartProductDescription(product, details = {}) {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return productDescription(product.title);
+
+  const context = {
+    product_title: product.title,
+    category: [details.first_level_category_name, details.second_level_category_name].filter(Boolean).join(" > "),
+    popularity_signal: details.lastest_volume || "",
+    rating: details.evaluate_rate || "",
+    product_video_available: Boolean(details.product_video_url),
+  };
+
+  try {
+    const response = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: process.env.OPENAI_MODEL || "gpt-6-astra",
+        instructions:
+          "אתה קופירייטר מסחרי בעברית עבור ערוץ Telegram בשם PartyZone Deals שמציג אביזרים למסיבות. " +
+          "כתוב תיאור מוצר קצר, מקורי ומושך בעברית (עד 2 משפטים, עד 220 תווים). " +
+          "הסבר מה המוצר עושה ולאיזה רגע במסיבה הוא מתאים, והבלט תועלת קונקרטית שמבוססת על המידע שסופק. " +
+          "מותר לנסח בצורה שיווקית וחיה, אבל אסור להמציא מפרט, חומרים, מידות, עוצמה, תכולה, עמידות, תוצאות או הבטחות. " +
+          "אם הכותרת לא ברורה או שהמידע דל, כתוב תיאור זהיר וכללי ולא תנחש. " +
+          "החזר רק את התיאור, בלי כותרת, מחיר, אימוג׳י או מרכאות.",
+        input: JSON.stringify(context),
+        max_output_tokens: 110,
+      }),
+      signal: AbortSignal.timeout(12000),
+    });
+    if (!response.ok) throw new Error(`OpenAI description request failed: ${response.status}`);
+    const data = await response.json();
+    const description = extractResponseText(data).replace(/^["'״]+|["'״]+$/g, "").trim();
+    if (!description || description.length > 320) throw new Error("AI description was empty or too long");
+    return description;
+  } catch (error) {
+    console.warn("AI product description unavailable; using safe fallback:", error?.message ?? "unknown error");
+    return productDescription(product.title);
+  }
+}
+
+async function enrichProductDescriptions(products) {
+  let detailMap = new Map();
+  try {
+    detailMap = await queryAliExpressProductDetails(products);
+  } catch (error) {
+    console.warn("AliExpress detail enrichment unavailable:", error?.message ?? "unknown error");
+  }
+  return Promise.all(products.map(async (product) => ({
+    ...product,
+    description: await writeSmartProductDescription(product, detailMap.get(String(product.id)) ?? {}),
+  })));
+}
+
 async function sendTelegramProductResults(token, chatId, products, keyword) {
+  products = await enrichProductDescriptions(products);
   await sendTelegramMessage(token, chatId, `🎉 נמצאו ${products.length} מוצרים עבור "${keyword}":\n\nהנה המוצרים שמצאתי:`);
-  for (const [index, product] of products.entries()) {
+  for (const product of products) {
     const link = safeHttpUrl(product.link);
     const image = safeHttpUrl(product.image);
     const keyboard = link ? { inline_keyboard: [[{ text: "🛍️ לצפייה במוצר", url: link }]] } : undefined;
@@ -117,7 +235,7 @@ function aliExpressTimestamp() {
   return date.toISOString().slice(0, 19).replace("T", " ");
 }
 
-async function queryAliExpressProducts(keyword) {
+async function queryAliExpressProducts(keyword, { pageNo = 1, pageSize = 50 } = {}) {
   const appKey = process.env.ALIEXPRESS_APP_KEY;
   const appSecret = process.env.ALIEXPRESS_APP_SECRET;
   const trackingId = process.env.ALIEXPRESS_TRACKING_ID;
@@ -134,8 +252,8 @@ async function queryAliExpressProducts(keyword) {
     v: "2.0",
     format: "json",
     keywords: keyword,
-    page_no: "1",
-    page_size: "20",
+    page_no: String(pageNo),
+    page_size: String(pageSize),
     target_currency: "USD",
     target_language: "EN",
     ship_to_country: "IL",
@@ -159,7 +277,7 @@ async function queryAliExpressProducts(keyword) {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded;charset=utf-8" },
     body,
-    signal: AbortSignal.timeout(20000),
+    signal: AbortSignal.timeout(10000),
   });
 
   const data = await response.json().catch(() => null);
@@ -194,6 +312,7 @@ async function queryAliExpressProducts(keyword) {
 
   return products
     .map((product) => ({
+      id: String(product.product_id ?? product.productId ?? ""),
       title: product.product_title ?? product.productTitle ?? "AliExpress product",
       price: product.sale_price ?? product.salePrice ?? "",
       currency: product.sale_price_currency ?? product.salePriceCurrency ?? "USD",
@@ -202,7 +321,6 @@ async function queryAliExpressProducts(keyword) {
       commission: product.commission_rate ?? product.commissionRate ?? "",
     }))
     .filter((product) => isPartyRelevant(product.title))
-    .slice(0, 5)
     .map((product) => ({ ...product, description: productDescription(product.title) }));
 }
 
@@ -284,7 +402,7 @@ export default async (request) => {
         break;
       }
       try {
-        const products = await queryAliExpressProducts(keyword);
+        const products = (await queryAliExpressProducts(keyword)).slice(0, 5);
         if (products.length) {
           await sendTelegramProductResults(token, chatId, products, keyword);
           reply = null;
@@ -312,3 +430,6 @@ export default async (request) => {
     return json(502, { ok: false, error: "Could not send Telegram reply" });
   }
 };
+
+
+export { queryAliExpressProducts, sendTelegramProductResults };
