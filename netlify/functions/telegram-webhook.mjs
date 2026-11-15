@@ -10,20 +10,59 @@ function json(statusCode, body) {
   });
 }
 
-async function sendTelegramMessage(token, chatId, text) {
+async function sendTelegramMessage(token, chatId, text, replyMarkup) {
+  const payload = { chat_id: chatId, text, disable_web_page_preview: true };
+  if (replyMarkup) payload.reply_markup = replyMarkup;
   const response = await fetch(`${TELEGRAM_API}/bot${token}/sendMessage`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text,
-      disable_web_page_preview: false,
-    }),
+    body: JSON.stringify(payload),
   });
-
   const result = await response.json().catch(() => null);
-  if (!response.ok || !result?.ok) {
-    throw new Error("Telegram sendMessage request failed");
+  if (!response.ok || !result?.ok) throw new Error("Telegram sendMessage request failed");
+}
+
+async function sendTelegramPhoto(token, chatId, photoUrl, caption, replyMarkup) {
+  const response = await fetch(`${TELEGRAM_API}/bot${token}/sendPhoto`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ chat_id: chatId, photo: photoUrl, caption, reply_markup: replyMarkup }),
+  });
+  const result = await response.json().catch(() => null);
+  if (!response.ok || !result?.ok) throw new Error("Telegram sendPhoto request failed");
+}
+
+function safeHttpUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:" ? url.toString() : "";
+  } catch {
+    return "";
+  }
+}
+
+function productCaption(product, index) {
+  const lines = [`🎉 מוצר ${index + 1}`, product.title];
+  if (product.price) lines.push(`💰 מחיר: ${product.price} ${product.currency}`);
+  return lines.join("\n").slice(0, 1000);
+}
+
+async function sendTelegramProductResults(token, chatId, products, keyword) {
+  await sendTelegramMessage(token, chatId, `🎉 נמצאו ${products.length} מוצרים עבור "${keyword}":\n\nהנה המוצרים שמצאתי:`);
+  for (const [index, product] of products.entries()) {
+    const link = safeHttpUrl(product.link);
+    const image = safeHttpUrl(product.image);
+    const keyboard = link ? { inline_keyboard: [[{ text: "🛍️ לצפייה במוצר", url: link }]] } : undefined;
+    const caption = productCaption(product, index);
+    if (image) {
+      try {
+        await sendTelegramPhoto(token, chatId, image, caption, keyboard);
+        continue;
+      } catch {
+        console.warn("Telegram photo delivery failed; using a text product card.");
+      }
+    }
+    await sendTelegramMessage(token, chatId, caption, keyboard);
   }
 }
 
@@ -129,21 +168,8 @@ async function queryAliExpressProducts(keyword) {
   }));
 }
 
-function formatProducts(products, keyword) {
-  if (!products.length) {
-    return `לא נמצאו מוצרים עבור "${keyword}". נסה מילות חיפוש באנגלית, למשל: party lights או LED balloons.`;
-  }
-
-  const lines = [`🎉 מצאתי ${products.length} מוצרים עבור "${keyword}":`];
-  for (const [index, product] of products.entries()) {
-    lines.push("");
-    lines.push(`${index + 1}. ${product.title}`);
-    if (product.price) lines.push(`💰 מחיר: ${product.price} ${product.currency}`);
-    if (product.commission) lines.push(`💸 עמלה: ${product.commission}`);
-    if (product.link) lines.push(`🛒 ${product.link}`);
-    if (product.image) lines.push(`🖼 ${product.image}`);
-  }
-  return lines.join("\n").slice(0, 3900);
+function formatNoProducts(keyword) {
+  return `לא נמצאו מוצרים עבור "${keyword}". נסה מילות חיפוש באנגלית, למשל: party lights או LED balloons.`;
 }
 
 export default async (request) => {
@@ -221,7 +247,12 @@ export default async (request) => {
       }
       try {
         const products = await queryAliExpressProducts(keyword);
-        reply = formatProducts(products, keyword);
+        if (products.length) {
+          await sendTelegramProductResults(token, chatId, products, keyword);
+          reply = null;
+        } else {
+          reply = formatNoProducts(keyword);
+        }
       } catch (error) {
         // Do not expose credentials, signatures, or raw provider responses in Telegram.
         const message = error instanceof Error ? error.message : "";
@@ -237,7 +268,7 @@ export default async (request) => {
   }
 
   try {
-    await sendTelegramMessage(token, chatId, reply);
+    if (reply) await sendTelegramMessage(token, chatId, reply);
     return json(200, { ok: true });
   } catch {
     return json(502, { ok: false, error: "Could not send Telegram reply" });
