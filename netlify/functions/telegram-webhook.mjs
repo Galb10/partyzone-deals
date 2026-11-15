@@ -473,9 +473,13 @@ export default async (request) => {
         // Do not expose credentials, signatures, or raw provider responses in Telegram.
         const message = error instanceof Error ? error.message : "";
         console.error("AliExpress product query failed:", message);
+        const safeDiagnostic = String(message || "unknown error")
+          .replace(/(app_secret|app_key|access_token|refresh_token|sign)\s*[:=]\s*[^\s,;]+/gi, "$1=[hidden]")
+          .replace(/[\r\n]+/g, " ")
+          .slice(0, 180);
         reply =
-          "⚠️ החיפוש ב־AliExpress לא הצליח כרגע.\n" +
-          "בדוק שההרשאה והפרטים מוגדרים נכון ב־Netlify, ונסה שוב מאוחר יותר.";
+          "⚠️ החיפוש נכשל. סיבת התקלה: " + safeDiagnostic +
+          "\nשלח לי את ההודעה הזו כדי שאוכל לתקן.";
       }
       break;
     }
