@@ -83,7 +83,7 @@ function productCaption(product) {
 
 async function sendTelegramProductResults(token, chatId, products, keyword) {
   await sendTelegramMessage(token, chatId, `🎉 נמצאו ${products.length} מוצרים עבור "${keyword}":\n\nהנה המוצרים שמצאתי:`);
-  for (const [index, product] of products.entries()) {
+  for (const product of products) {
     const link = safeHttpUrl(product.link);
     const image = safeHttpUrl(product.image);
     const keyboard = link ? { inline_keyboard: [[{ text: "🛍️ לצפייה במוצר", url: link }]] } : undefined;
@@ -117,7 +117,7 @@ function aliExpressTimestamp() {
   return date.toISOString().slice(0, 19).replace("T", " ");
 }
 
-async function queryAliExpressProducts(keyword) {
+async function queryAliExpressProducts(keyword, { pageNo = 1, pageSize = 50 } = {}) {
   const appKey = process.env.ALIEXPRESS_APP_KEY;
   const appSecret = process.env.ALIEXPRESS_APP_SECRET;
   const trackingId = process.env.ALIEXPRESS_TRACKING_ID;
@@ -134,13 +134,14 @@ async function queryAliExpressProducts(keyword) {
     v: "2.0",
     format: "json",
     keywords: keyword,
-    page_no: "1",
-    page_size: "20",
+    page_no: String(pageNo),
+    page_size: String(pageSize),
     target_currency: "USD",
     target_language: "EN",
     ship_to_country: "IL",
     tracking_id: trackingId,
     fields: [
+      "product_id",
       "product_id",
       "product_title",
       "product_main_image_url",
@@ -194,6 +195,7 @@ async function queryAliExpressProducts(keyword) {
 
   return products
     .map((product) => ({
+      id: String(product.product_id ?? product.productId ?? ""),
       title: product.product_title ?? product.productTitle ?? "AliExpress product",
       price: product.sale_price ?? product.salePrice ?? "",
       currency: product.sale_price_currency ?? product.salePriceCurrency ?? "USD",
@@ -202,7 +204,6 @@ async function queryAliExpressProducts(keyword) {
       commission: product.commission_rate ?? product.commissionRate ?? "",
     }))
     .filter((product) => isPartyRelevant(product.title))
-    .slice(0, 5)
     .map((product) => ({ ...product, description: productDescription(product.title) }));
 }
 
@@ -284,7 +285,7 @@ export default async (request) => {
         break;
       }
       try {
-        const products = await queryAliExpressProducts(keyword);
+        const products = (await queryAliExpressProducts(keyword)).slice(0, 5);
         if (products.length) {
           await sendTelegramProductResults(token, chatId, products, keyword);
           reply = null;
@@ -312,3 +313,6 @@ export default async (request) => {
     return json(502, { ok: false, error: "Could not send Telegram reply" });
   }
 };
+
+
+export { queryAliExpressProducts, sendTelegramProductResults };
