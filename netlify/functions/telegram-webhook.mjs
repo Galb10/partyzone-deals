@@ -239,7 +239,13 @@ async function enrichProductDescriptions(products) {
     console.warn("AliExpress detail enrichment unavailable:", error?.message ?? "unknown error");
   }
   const pricedProducts = await convertProductPricesToILS(products);
-  return Promise.all(pricedProducts.map(async (product) => ({
+  const productsWithPrice = pricedProducts.filter((product) =>
+    Number.isFinite(product.priceILS) && product.priceILS > 0
+  );
+  if (!productsWithPrice.length) {
+    throw new Error("AliExpress did not return a usable ILS or USD price; refusing to publish products without a shekel price");
+  }
+  return Promise.all(productsWithPrice.map(async (product) => ({
     ...product,
     description: await writeSmartProductDescription(product, detailMap.get(String(product.id)) ?? {}),
   })));
