@@ -75,9 +75,21 @@ function isPartyRelevant(title) {
   return strongTerms.some((term) => value.includes(term));
 }
 
+function formatShekelPrice(value, currency) {
+  if (!value || String(currency || "").toUpperCase() !== "ILS") return "";
+  const amount = Number(String(value).replace(/[^0-9.]/g, ""));
+  if (!Number.isFinite(amount) || amount <= 0) return "";
+  return new Intl.NumberFormat("he-IL", {
+    style: "currency",
+    currency: "ILS",
+    maximumFractionDigits: 2,
+  }).format(amount);
+}
+
 function productCaption(product) {
   const lines = [product.title, product.description];
-  if (product.price) lines.push(`💰 מחיר: ${product.price} ${product.currency}`);
+  const price = formatShekelPrice(product.price, product.currency);
+  if (price) lines.push(`💰 מחיר: ${price}`);
   return lines.join("\n\n").slice(0, 1000);
 }
 
@@ -96,7 +108,7 @@ async function queryAliExpressProductDetails(products) {
     v: "2.0",
     format: "json",
     product_ids: ids.join(","),
-    target_currency: "USD",
+    target_currency: "ILS",
     target_language: "EN",
     tracking_id: trackingId,
     country: "IL",
@@ -163,13 +175,16 @@ async function writeSmartProductDescription(product, details = {}) {
       body: JSON.stringify({
         model: process.env.OPENAI_MODEL || "gpt-6-astra",
         instructions:
-          "אתה קופירייטר מסחרי בעברית עבור ערוץ Telegram בשם PartyZone Deals שמציג אביזרים למסיבות. " +
-          "כתוב תיאור מוצר קצר, מקורי ומושך בעברית (עד 2 משפטים, עד 220 תווים). " +
-          "הסבר מה המוצר עושה ולאיזה רגע במסיבה הוא מתאים, והבלט תועלת קונקרטית שמבוססת על המידע שסופק. " +
-          "מותר לנסח בצורה שיווקית וחיה, אבל אסור להמציא מפרט, חומרים, מידות, עוצמה, תכולה, עמידות, תוצאות או הבטחות. " +
-          "אם הכותרת לא ברורה או שהמידע דל, כתוב תיאור זהיר וכללי ולא תנחש. " +
+          "כתוב בעברית תיאור קצר ומדויק למוצר עבור PartyZone Deals (משפט אחד או שניים, עד 180 תווים). " +
+          "השתמש רק בפרטים שמופיעים במפורש בשם המוצר ובקטגוריה שסופקה. " +
+          "אסור להסיק שימוש, תכונה, חומר, מידה, עוצמה, תכולה או התאמה לאירוע אם הם לא מצוינים במפורש. " +
+          "אל תכתוב משפטי אווירה כלליים כמו 'ישדרג את המסיבה'. תאר בפשטות מה המוצר לפי שמו. " +
+          "אם השם לא מספק מידע ברור, החזר תיאור עובדתי מינימלי שמבוסס על המילים בשם המוצר בלבד. " +
           "החזר רק את התיאור, בלי כותרת, מחיר, אימוג׳י או מרכאות.",
-        input: JSON.stringify(context),
+        input: JSON.stringify({
+          product_title: context.product_title,
+          category: context.category,
+        }),
         max_output_tokens: 110,
       }),
       signal: AbortSignal.timeout(12000),
@@ -181,7 +196,7 @@ async function writeSmartProductDescription(product, details = {}) {
     return description;
   } catch (error) {
     console.warn("AI product description unavailable; using safe fallback:", error?.message ?? "unknown error");
-    return productDescription(product.title);
+    return "פרטי תיאור נוספים אינם זמינים; שם המוצר מופיע למעלה.";
   }
 }
 
@@ -254,7 +269,7 @@ async function queryAliExpressProducts(keyword, { pageNo = 1, pageSize = 50 } = 
     keywords: keyword,
     page_no: String(pageNo),
     page_size: String(pageSize),
-    target_currency: "USD",
+    target_currency: "ILS",
     target_language: "EN",
     ship_to_country: "IL",
     tracking_id: trackingId,
@@ -315,7 +330,7 @@ async function queryAliExpressProducts(keyword, { pageNo = 1, pageSize = 50 } = 
       id: String(product.product_id ?? product.productId ?? ""),
       title: product.product_title ?? product.productTitle ?? "AliExpress product",
       price: product.sale_price ?? product.salePrice ?? "",
-      currency: product.sale_price_currency ?? product.salePriceCurrency ?? "USD",
+      currency: product.sale_price_currency ?? product.salePriceCurrency ?? "ILS",
       image: product.product_main_image_url ?? product.productMainImageUrl ?? "",
       link: product.promotion_link ?? product.promotionLink ?? product.product_detail_url ?? product.productDetailUrl ?? "",
       commission: product.commission_rate ?? product.commissionRate ?? "",
