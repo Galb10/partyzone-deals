@@ -41,24 +41,57 @@ function safeHttpUrl(value) {
   }
 }
 
-function productDescription(title) {
-  const value = title.toLowerCase();
-
-  if (/disco|dj|rave|night ?club|strobe|laser|stage light|party light|led light|glow|neon|projector/.test(value)) {
-    return "תאורה ואפקטים צבעוניים שיוסיפו אווירה לרחבת הריקודים.";
+function productDescription(title, details = {}) {
+  const value = String(title || "").toLowerCase();
+  const category = String(details.first_level_category_name || "").toLowerCase();
+  const rules = [
+    [/\b(moving head|beam light)\b/, "ראש תאורה מסתובב שמקרין אלומות אור ומשנה את כיוונן ברחבת הריקודים."],
+    [/\b(laser projector|laser light|rgb laser)\b/, "מקרן לייזר שיוצר נקודות וקווים צבעוניים על הקירות והתקרה לאפקט מועדון."],
+    [/\b(disco ball|mirror ball)\b/, "כדור מראות שמחזיר את האור לנקודות מנצנצות ברחבי החדר."],
+    [/\b(strobe|flash light)\b/, "תאורת סטרוב שמבזיקה בקצב ויוצרת אפקטים של הבזקי אור ברחבת הריקודים."],
+    [/\b(par light|stage wash|stage lighting)\b/, "פנס במה שמאיר אזור שלם בצבע ומשמש להדגשת רחבת הריקודים או עמדת הדי־ג׳יי."],
+    [/\b(led strip|led tape|light strip)\b/, "פס תאורת LED שאפשר להצמיד לאורך קירות, שולחנות או עמדת DJ כדי להוסיף תאורה צבעונית."],
+    [/\b(led curtain|curtain lights|fairy curtain)\b/, "שרשרת אורות בצורת וילון שמתאימה לתלייה כרקע מואר מאחורי שולחן או עמדת צילום."],
+    [/\b(string lights|fairy lights)\b/, "שרשרת נורות לתלייה מסביב למתחם, מעל שולחנות או לאורך קירות ליצירת תאורת אווירה."],
+    [/\b(neon sign|neon light)\b/, "שלט ניאון מואר שאפשר לתלות כרקע דקורטיבי או לצד עמדת הצילום."],
+    [/\b(fog machine|smoke machine)\b/, "מכונת עשן שמפזרת ערפל באוויר כדי להבליט את קרני התאורה ברחבת הריקודים."],
+    [/\b(bubble machine|bubble maker)\b/, "מכונת בועות שמפזרת בועות סבון ברחבה ומתאימה למסיבות ולאירועים."],
+    [/\b(confetti cannon|confetti launcher)\b/, "משגר קונפטי לפיזור פתיתי נייר צבעוניים ברגעי שיא, כמו כניסת אורחים או ספירה לאחור."],
+    [/\b(confetti|table scatter)\b/, "קונפטי לפיזור על שולחנות או באוויר כדי להוסיף צבע וקישוט לרגעי השיא במסיבה."],
+    [/\b(balloon arch|balloon garland|balloon kit)\b/, "ערכת בלונים להרכבת קשת או זר בלונים, שמתאימה לעיצוב הכניסה או קיר צילום."],
+    [/\b(foil fringe|tinsel curtain|metallic fringe)\b/, "וילון פרנזים מטאלי לתלייה על הקיר כרקע נוצץ לעמדת צילום או לשולחן המרכזי."],
+    [/\b(photo backdrop|backdrop|photo booth background)\b/, "רקע דקורטיבי שאפשר לתלות מאחורי האורחים ליצירת פינת צילום במסיבה."],
+    [/\b(photo booth props|photo props)\b/, "אביזרי צילום שאורחים יכולים להחזיק בתמונות, כמו שלטים ואביזרים מצחיקים."],
+    [/\b(party glasses|led glasses|neon glasses)\b/, "משקפיים צבעוניים או מוארים שהאורחים יכולים להרכיב כאביזר למסיבה ולצילומים."],
+    [/\b(glow stick|glow sticks)\b/, "מקלות זוהרים שאפשר לחלק לאורחים ולנופף איתם ברחבת הריקודים."],
+    [/\b(glow bracelet|led bracelet|light up bracelet)\b/, "צמידים זוהרים לחלוקה לאורחים, שיוצרים נקודות אור צבעוניות בזמן הריקודים."],
+    [/\b(party hat|birthday hat)\b/, "כובעי מסיבה לחלוקה לאורחים ולהוספת אביזר חגיגי לתמונות ולאירוע."],
+    [/\b(party mask|masquerade mask)\b/, "מסכות לבישה שמתאימות למסיבת תחפושות, נשף או פינת צילום."],
+    [/\b(banner|happy birthday sign|letter banner)\b/, "שלט או שרשרת דגלונים לתלייה על הקיר כרקע חגיגי למסיבה."],
+    [/\b(party tablecloth|table cover)\b/, "כיסוי שולחן דקורטיבי שמוסיף צבע לעיצוב שולחן הכיבוד או שולחן יום ההולדת."],
+    [/\b(paper plates|disposable plates)\b/, "צלחות חד־פעמיות להגשת אוכל וכיבוד באירוח ובמסיבה."],
+    [/\b(paper cups|disposable cups)\b/, "כוסות חד־פעמיות להגשת שתייה לאורחים במהלך האירוע."],
+    [/\b(cake topper)\b/, "קישוט שמניחים על גבי העוגה כדי להתאים אותה לנושא החגיגה."],
+    [/\b(birthday candles|cake candles)\b/, "נרות לעוגת יום הולדת, להדלקה בזמן שירת יום ההולדת וכיבוי הנרות."],
+    [/\b(pinata|piñata)\b/, "פיניאטה לתלייה ולמשחק שבו המשתתפים מנסים לשבור אותה כדי לשחרר את התכולה."],
+    [/\b(party popper)\b/, "קונפטי קופץ להפעלה ברגע חגיגי כמו הרמת כוסית, כניסה או ספירה לאחור."],
+    [/\b(dj controller stand|dj table|dj booth)\b/, "אביזר לעמדת DJ שמיועד לארגון והצבה של ציוד העמדה במהלך האירוע."],
+  ];
+  for (const [pattern, description] of rules) {
+    if (pattern.test(value)) return description;
   }
-  if (/balloon|confetti|streamer|banner|backdrop|foil fringe|garland|tassel|pom.?pom|pinata|piñata/.test(value)) {
-    return "קישוט חגיגי שיוסיף צבע וישדרג את עיצוב המסיבה.";
+  const categoryRules = [
+    [/light|lighting|lamp/, "תאורת אווירה למסיבה, המתאימה להוספת אור צבעוני לאזור האירוע."],
+    [/balloon/, "בלונים לקישוט המתחם, שולחן החגיגה או אזור הצילום."],
+    [/decoration|decor/, "קישוט למסיבה שמיועד לעיצוב חלל האירוע ולהתאמתו לאווירת החגיגה."],
+    [/tableware|kitchen|dining/, "אביזר להגשה ולאירוח, המתאים לשולחן הכיבוד במסיבה."],
+    [/costume|clothing|accessor/, "אביזר לביש שמשתלב בתחפושת או בלוק של האורחים במסיבה."],
+  ];
+  for (const [pattern, description] of categoryRules) {
+    if (pattern.test(category)) return description;
   }
-  if (/photo ?booth|party hat|party glasses|glow stick|bracelet|wristband|costume|mask|party favor/.test(value)) {
-    return "אביזר כיפי שישדרג את האווירה ויוסיף עניין לאורחים.";
-  }
-  if (/bubble machine|smoke machine|fog machine|confetti cannon/.test(value)) {
-    return "אפקט מיוחד שיכול להפוך את המסיבה לחווייתית ומרשימה יותר.";
-  }
-  return "אביזר למסיבה שיכול להוסיף טאץ׳ חגיגי לאירוע.";
+  return "אביזר למסיבה. מומלץ לבדוק בתמונות המוצר את צורתו ואת אופן השימוש לפני ההזמנה.";
 }
-
 function isPartyRelevant(title) {
   const value = title.toLowerCase().replace(/[^a-z0-9\s-]/g, " ");
   const strongTerms = [
@@ -218,7 +251,7 @@ async function writeSmartProductDescription(product, details = {}) {
       });
       if (response.status === 429) {
         console.warn("OpenAI rate/quota limit reached; using a title-based Hebrew fallback.");
-        return productDescription(product.title);
+        return productDescription(product.title, details);
       }
       if (!response.ok) throw new Error(`OpenAI description request failed: ${response.status}`);
       const data = await response.json();
@@ -372,7 +405,7 @@ async function queryAliExpressProducts(keyword, { pageNo = 1, pageSize = 50 } = 
       ? (Array.isArray(productsContainer.product) ? productsContainer.product : [productsContainer.product])
       : [];
 
-  return products
+  const normalizedProducts = products
     .map((product) => ({
       id: String(product.product_id ?? product.productId ?? ""),
       title: product.product_title ?? product.productTitle ?? "AliExpress product",
@@ -384,8 +417,14 @@ async function queryAliExpressProducts(keyword, { pageNo = 1, pageSize = 50 } = 
       popularity: Number(product.lastest_volume ?? product.lastestVolume ?? 0) || 0,
       rating: product.evaluate_rate ?? product.evaluateRate ?? "",
     }))
-    .filter((product) => isPartyRelevant(product.title))
+    .filter((product) => product.id && isPartyRelevant(product.title))
     .sort((a, b) => b.popularity - a.popularity);
+  const seenIds = new Set();
+  return normalizedProducts.filter((product) => {
+    if (!product.id || seenIds.has(product.id)) return false;
+    seenIds.add(product.id);
+    return true;
+  });
 }
 
 function formatNoProducts(keyword) {
