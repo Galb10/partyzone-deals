@@ -216,6 +216,10 @@ async function writeSmartProductDescription(product, details = {}) {
         }),
         signal: AbortSignal.timeout(18000),
       });
+      if (response.status === 429) {
+        console.warn("OpenAI rate/quota limit reached; using a title-based Hebrew fallback.");
+        return productDescription(product.title);
+      }
       if (!response.ok) throw new Error(`OpenAI description request failed: ${response.status}`);
       const data = await response.json();
       const description = extractResponseText(data).replace(/^[\"'״]+|[\"'״]+$/g, "").trim();
