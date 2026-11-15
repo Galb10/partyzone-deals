@@ -155,7 +155,7 @@ function extractResponseText(response) {
 
 async function writeSmartProductDescription(product, details = {}) {
   const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) return productDescription(product.title);
+  if (!apiKey) return "פרטי תיאור נוספים אינם זמינים; שם המוצר מופיע למעלה.";
 
   const context = {
     product_title: product.title,
