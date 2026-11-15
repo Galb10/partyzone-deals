@@ -86,7 +86,15 @@ export default async () => {
     return new Response("Not enough new relevant products; will retry later");
   }
 
-  const selected = shuffle([...candidates.values()]).slice(0, 3);
+  const selected = [...candidates.values()]
+    .sort((a, b) => {
+      const salesDifference = (Number(b.popularity) || 0) - (Number(a.popularity) || 0);
+      if (salesDifference !== 0) return salesDifference;
+      const ratingA = Number.parseFloat(String(a.rating || "0").replace("%", "")) || 0;
+      const ratingB = Number.parseFloat(String(b.rating || "0").replace("%", "")) || 0;
+      return ratingB - ratingA;
+    })
+    .slice(0, 3);
   await sendTelegramProductResults(token, chatId, selected, "מבחר אביזרים למסיבה");
 
   const nextState = {
