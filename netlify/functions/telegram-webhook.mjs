@@ -50,7 +50,7 @@ function productDescription(title, details = {}) {
     [/\b(disco ball|mirror ball)\b/, "כדור מראות שמחזיר את האור לנקודות מנצנצות ברחבי החדר."],
     [/\b(strobe|flash light)\b/, "תאורת סטרוב שמבזיקה בקצב ויוצרת אפקטים של הבזקי אור ברחבת הריקודים."],
     [/\b(par light|stage wash|stage lighting)\b/, "פנס במה שמאיר אזור שלם בצבע ומשמש להדגשת רחבת הריקודים או עמדת הדי־ג׳יי."],
-    [/\b(led strip|led tape|light strip)\b/, "פס תאורת LED שאפשר להצמיד לאורך קירות, שולחנות או עמדת DJ כדי להוסיף תאורה צבעונית."],
+    [/\b(led strip|led tape|light strip)\b/, "פס תאורת לד שאפשר להצמיד לאורך קירות, שולחנות או עמדת תקליטן כדי להוסיף תאורה צבעונית."],
     [/\b(led curtain|curtain lights|fairy curtain)\b/, "שרשרת אורות בצורת וילון שמתאימה לתלייה כרקע מואר מאחורי שולחן או עמדת צילום."],
     [/\b(string lights|fairy lights)\b/, "שרשרת נורות לתלייה מסביב למתחם, מעל שולחנות או לאורך קירות ליצירת תאורת אווירה."],
     [/\b(neon sign|neon light)\b/, "שלט ניאון מואר שאפשר לתלות כרקע דקורטיבי או לצד עמדת הצילום."],
@@ -75,7 +75,7 @@ function productDescription(title, details = {}) {
     [/\b(birthday candles|cake candles)\b/, "נרות לעוגת יום הולדת, להדלקה בזמן שירת יום ההולדת וכיבוי הנרות."],
     [/\b(pinata|piñata)\b/, "פיניאטה לתלייה ולמשחק שבו המשתתפים מנסים לשבור אותה כדי לשחרר את התכולה."],
     [/\b(party popper)\b/, "קונפטי קופץ להפעלה ברגע חגיגי כמו הרמת כוסית, כניסה או ספירה לאחור."],
-    [/\b(dj controller stand|dj table|dj booth)\b/, "אביזר לעמדת DJ שמיועד לארגון והצבה של ציוד העמדה במהלך האירוע."],
+    [/\b(dj controller stand|dj table|dj booth)\b/, "אביזר לעמדת תקליטן שמיועד לארגון והצבה של ציוד העמדה במהלך האירוע."],
   ];
   for (const [pattern, description] of rules) {
     if (pattern.test(value)) return description;
@@ -215,7 +215,7 @@ function extractResponseText(response) {
 
 async function writeSmartProductDescription(product, details = {}) {
   const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) throw new Error("OPENAI_API_KEY is not configured; refusing to publish without an AI description");
+  if (!apiKey) return productDescription(product.title, details);
 
   const context = {
     product_title: product.title,
@@ -265,7 +265,8 @@ async function writeSmartProductDescription(product, details = {}) {
       console.warn(`AI description attempt failed (${model}):`, error?.message ?? "unknown error");
     }
   }
-  throw new Error(`Could not generate a Hebrew AI description: ${lastError?.message ?? "unknown error"}`);
+  console.warn("Using product-specific Hebrew fallback after AI description failure:", lastError?.message ?? "unknown error");
+  return productDescription(product.title, details);
 }
 
 async function enrichProductDescriptions(products) {
@@ -428,7 +429,7 @@ async function queryAliExpressProducts(keyword, { pageNo = 1, pageSize = 50 } = 
 }
 
 function formatNoProducts(keyword) {
-  return `לא נמצאו מוצרים עבור "${keyword}". נסה מילות חיפוש באנגלית, למשל: party lights או LED balloons.`;
+  return `לא נמצאו מוצרים עבור "${keyword}". נסה מילות חיפוש באנגלית, למשל: party lights או לד balloons.`;
 }
 
 export default async (request) => {
@@ -484,7 +485,7 @@ export default async (request) => {
         "/start – התחלת שימוש\n" +
         "/status – בדיקת מצב הבוט\n" +
         "/help – הצגת העזרה\n\n" +
-        "מומלץ לחפש באנגלית, למשל: party decorations, LED lights, glow sticks.";
+        "מומלץ לחפש באנגלית, למשל: party decorations, לד lights, glow sticks.";
       break;
     case "/status":
       reply =
