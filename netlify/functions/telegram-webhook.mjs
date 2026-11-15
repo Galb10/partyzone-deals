@@ -160,7 +160,7 @@ async function queryAliExpressProducts(keyword, { pageNo = 1, pageSize = 50 } = 
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded;charset=utf-8" },
     body,
-    signal: AbortSignal.timeout(20000),
+    signal: AbortSignal.timeout(10000),
   });
 
   const data = await response.json().catch(() => null);
