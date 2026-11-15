@@ -256,7 +256,7 @@ async function writeSmartProductDescription(product, details = {}) {
       if (!response.ok) throw new Error(`OpenAI description request failed: ${response.status}`);
       const data = await response.json();
       const description = extractResponseText(data).replace(/^[\"'״]+|[\"'״]+$/g, "").trim();
-      if (!description || description.length > 320 || !/[\u0590-\u05FF]/.test(description)) {
+      if (!description || description.length > 320 || !/[\u0590-\u05FF]/.test(description) || /[A-Za-z]/.test(description)) {
         throw new Error("AI did not return a valid Hebrew description");
       }
       return description;
