@@ -26,8 +26,10 @@ function shuffle(items) {
 }
 
 function productKey(product) {
-  if (product.id) return `id:${product.id}`;
-  return `title:${product.title.toLowerCase().replace(/\s+/g, " ").trim()}`;
+  const id = String(product.id ?? "").trim();
+  if (id) return `id:${id}`;
+  const title = String(product.title ?? "").toLowerCase().replace(/[^\\p{L}\\p{N}]+/gu, " ").trim();
+  return `title:${title}`;
 }
 
 export default async () => {
@@ -95,15 +97,15 @@ export default async () => {
       return ratingB - ratingA;
     })
     .slice(0, 3);
-  await sendTelegramProductResults(token, chatId, selected, "מבחר אביזרים למסיבה");
-
+  // Reserve selected product IDs before sending. If Telegram delivery is interrupted,
+  // the next scheduled run will still skip these products rather than reposting them.
   const nextState = {
     lastRunAt: new Date().toISOString(),
     lastAttemptAt: new Date().toISOString(),
-    // Keep a rolling history so products are not reposted after future deployments.
-    postedProductKeys: [...(state.postedProductKeys ?? []), ...selected.map(productKey)].slice(-2000),
+    postedProductKeys: [...(state.postedProductKeys ?? []), ...selected.map(productKey)].slice(-5000),
   };
   await store.setJSON(STATE_KEY, nextState);
+  await sendTelegramProductResults(token, chatId, selected, "מבחר אביזרים למסיבה");
 
   console.log("Automatic PartyZone post sent:", selected.map(productKey));
   return new Response("Published 3 new party products");
